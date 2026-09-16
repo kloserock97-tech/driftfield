@@ -1,30 +1,31 @@
-/* The flow field, as shader source.
+/* The flow field and the lens, as shader source.
  *
- * Both stages are plain GLSL strings so the interesting part of this project sits in one file you
- * can read top to bottom. The number of octaves and the number of curl probes arrive as #defines:
- * changing them rebuilds the program, which costs a few milliseconds once and keeps the inner loops
- * fully unrolled. */
+ * Both stages are plain GLSL strings so the interesting part of the project sits in one file you can
+ * read top to bottom. The number of trace steps and the number of curl probes arrive as #defines:
+ * changing them rebuilds the program once and keeps the inner loops fully unrolled. */
 
 export const vertexShader = /* glsl */ `
 precision highp float;
 
 attribute vec3 aSeed;
 
-uniform float uTime;        // seconds, scaled by speed on the CPU side
-uniform float uCurl;        // field frequency: low is smooth sheets, high is thin tangled thread
-uniform float uDissolve;    // 0 keeps the shell, 1 unwinds the whole cloud into strands
+uniform float uTime;        // field time, already scaled by speed on the CPU side
+uniform float uFrequency;   // field scale: low is broad sheets, high is fine tangles
+uniform float uSpray;       // how far points are thrown off the shell, can go negative to pull them in
 uniform float uRadius;      // cloud size in world units
 uniform float uFocus;       // distance from the camera to the plane of focus
-uniform float uAperture;    // 1 to 5.6, same direction as a real lens: bigger number, less blur
+uniform float uFStop;       // f-number, 1.4 to 16: small numbers mean a wide aperture and heavy blur
 uniform float uScreenScale; // viewport height / (2 tan(fov/2)): world units to pixels at depth 1
 uniform float uPointScale;  // user multiplier on top of the optical size
 
-varying float vLevel;
+varying float vLight;
 
-/* One pixel of bokeh, expressed as a fraction of the cloud radius. The number is not derived from
-   the projection, it is measured: a point at one unit of defocus with the aperture wide open covers
-   about that much of the cloud on screen. */
-const float PIX = 1.0 / 1250.0;
+/* Focal length of the virtual lens in world units. With the camera about six units away this behaves
+   like a short telephoto: enough blur to see the depth, not so much that everything melts. */
+const float FOCAL = 0.35;
+
+/* Smallest visible dot, in world units at the focus distance. Everything else is measured against it. */
+const float GRAIN = 0.0021;
 
 vec3 hash33(vec3 p)
 {
@@ -35,7 +36,7 @@ vec3 hash33(vec3 p)
     return fract(sin(p) * 43758.5453123) * 2.0 - 1.0;
 }
 
-/* Gradient noise with the quintic fade, the usual construction. Values land in about -1 to 1. */
+/* Gradient noise with a quintic fade. Values land in roughly -1 to 1. */
 float gnoise(vec3 p)
 {
     vec3 i = floor(p);
@@ -52,114 +53,90 @@ float gnoise(vec3 p)
                        dot(hash33(i + vec3(1.0, 1.0, 1.0)), f - vec3(1.0, 1.0, 1.0)), u.x), u.y), u.z);
 }
 
-vec3 gnoise3(vec3 p)
+/* A vector potential: three decorrelated noise channels. */
+vec3 potential(vec3 p)
 {
-    return vec3(gnoise(p), gnoise(p + 31.416), gnoise(p - 17.234));
+    return vec3(gnoise(p), gnoise(p + vec3(19.19, 7.31, 3.77)), gnoise(p - vec3(11.53, 23.07, 5.41)));
 }
 
-/* Curl of the noise field.
+/* Curl of the potential, by finite differences.
  *
- * Velocity taken as the curl of a potential has zero divergence by construction, so the flow has no
- * sources and no sinks: points never pile up in clumps and never drain away. The result is
- * normalised, and that normalisation is the whole reason the cloud comes out as a sphere. There is
- * no sphere anywhere in this file.
- *
- * With PROBES 6 the derivatives are central differences (two probes per axis). With PROBES 3 they
- * are forward differences against a single sample at the centre: a third cheaper, slightly softer. */
+ * A velocity field built as a curl is divergence-free: it has no sources and no sinks, so points
+ * flowing through it never bunch up and never drain away. The derivatives are taken per axis; with
+ * PROBES 6 they are central differences, with PROBES 3 they are one-sided against a single sample
+ * at the centre, which is about a third cheaper and a little softer. */
 vec3 curl(vec3 p)
 {
-    vec3 sum = vec3(0.0);
+    const float h = 0.08;
 
     #if PROBES == 3
-        vec3 here = gnoise3(p);
-
-        for(int i = 0; i < 3; i++)
-        {
-            vec3 axis = vec3(float(i == 0), float(i == 1), float(i == 2));
-            sum += cross(axis, gnoise3(p + axis * 0.1) - here);
-        }
+        vec3 c = potential(p);
+        vec3 dx = (potential(p + vec3(h, 0.0, 0.0)) - c) / h;
+        vec3 dy = (potential(p + vec3(0.0, h, 0.0)) - c) / h;
+        vec3 dz = (potential(p + vec3(0.0, 0.0, h)) - c) / h;
     #else
-        for(int i = 0; i < 6; i++)
-        {
-            int a = i / 2;
-            vec3 axis = vec3(float(a == 0), float(a == 1), float(a == 2));
-            float s = (i - a * 2 == 1) ? 1.0 : -1.0;
-            sum += cross(axis, gnoise3(p + axis * (s * 0.1))) * s;
-        }
+        vec3 dx = (potential(p + vec3(h, 0.0, 0.0)) - potential(p - vec3(h, 0.0, 0.0))) / (2.0 * h);
+        vec3 dy = (potential(p + vec3(0.0, h, 0.0)) - potential(p - vec3(0.0, h, 0.0))) / (2.0 * h);
+        vec3 dz = (potential(p + vec3(0.0, 0.0, h)) - potential(p - vec3(0.0, 0.0, h))) / (2.0 * h);
     #endif
 
-    return normalize(sum);
+    return vec3(dy.z - dz.y, dz.x - dx.z, dx.y - dy.x);
 }
 
-/* Where a point that started at "seed" ends up.
+/* Where a point that started at "seed" is right now.
  *
- * Octave zero is the smooth shell: one turn through the field. Every octave after it folds what is
- * already folded, at twice the frequency and half the weight, and the last one starts from the shell
- * again so the fine ripple rides on top of the big shreds. Which of the two a point follows is
- * decided by another noise sample, and "dissolve" slides that decision across the whole cloud.
- *
- * The choice value is deliberately not clamped. It swings past zero and past one, and outside that
- * range the mix stops mixing and extrapolates: points get thrown out beyond the shell. That overshoot
- * is what makes the edge ragged instead of a clean ball. */
-vec3 field(vec3 seed)
+ * 1. Landing. The direction of the field at the seed, normalised, is a point on the unit sphere.
+ *    That normalisation is the only reason the cloud is round.
+ * 2. Tracing. From there the point follows the field for a few short strides, each one shorter than
+ *    the last and sampled at a finer scale, the way you would integrate a streamline. Neighbours that
+ *    land close together walk the same path, which is what draws threads instead of noise.
+ * 3. Spray. A slow noise over the sphere decides how far each patch sits from the shell. It is left
+ *    unclamped on purpose: where it dips below zero the points sink inside, where it peaks they are
+ *    thrown out, and the silhouette tears instead of staying a clean ball. */
+vec3 place(vec3 seed)
 {
-    vec3 shell = vec3(0.0);
-    vec3 wisps = vec3(0.0);
-    float scale = 1.0;
-    float weight = 1.0;
+    vec3 flow = vec3(uTime * 0.61, uTime, uTime * -0.37);
+    vec3 dir = normalize(curl(seed * uFrequency + flow));
 
-    for(int o = 0; o < OCTAVES; o++)
+    vec3 p = dir;
+    float stride = 0.34;
+    float scale = 1.7;
+
+    for(int i = 0; i < STEPS; i++)
     {
-        vec3 base = wisps;
-        if(o == 0) base = seed;
-        if(o == OCTAVES - 1 && OCTAVES > 1) base = shell;
-
-        vec3 point = base * uCurl * scale;
-        if(o == 0) point += uTime;
-
-        vec3 turn = curl(point);
-
-        if(o == 0)
-        {
-            shell = turn;
-            wisps = turn;
-        }
-        else
-        {
-            wisps += turn * weight;
-        }
-
-        scale *= 2.0;
-        weight = (o == 0) ? 0.5 : weight * 0.5;
+        vec3 v = curl(p * uFrequency * scale + flow * 0.5 + float(i) * 4.1);
+        p += normalize(v) * stride;
+        stride *= 0.57;
+        scale *= 1.9;
     }
 
-    float choice = gnoise(shell + uTime) + uDissolve;
+    float lift = gnoise(dir * 2.3 + flow * 0.3);
+    float radius = max(0.02, 1.0 + (lift + uSpray) * 0.65);
 
-    return mix(shell, wisps, choice);
+    return normalize(p) * radius;
 }
 
 void main()
 {
-    vec3 local = field(aSeed) * uRadius;
+    vec3 local = place(aSeed) * uRadius;
 
     vec4 viewPosition = modelViewMatrix * vec4(local, 1.0);
-    float depth = -viewPosition.z;
+    float depth = max(-viewPosition.z, 0.01);
 
-    /* Defocus is measured in cloud radii, not world units: the cloud is meant to be resized, and a
-       small one would otherwise sit entirely inside the depth of field while a big one turned to soup. */
-    float defocus = abs(depth - uFocus) / max(uRadius, 0.0001);
+    /* Thin-lens circle of confusion. The aperture diameter is focal length over f-number; the blur
+       disc grows with how far the point is from the plane of focus, relative to its own distance. */
+    float aperture = FOCAL / uFStop;
+    float coc = aperture * abs(depth - uFocus) / depth * (FOCAL / max(uFocus - FOCAL, 0.01)) * 18.0;
 
-    /* The circle of confusion grows with distance from the plane of focus, and the aperture sets how
-       fast. Same shape as a lens: at 5.6 the cloud is nearly all sharp, wide open it is mostly haze. */
-    float blur = (5.6 - uAperture) * 9.0;
-    float spot = max(defocus * blur * PIX, PIX) * uRadius * uPointScale;
+    float sharp = GRAIN * uRadius;
+    float size = (sharp + coc * uRadius) * uPointScale;
 
-    /* Brightness falls with the same defocus, which is what a real lens does: the same light spread
-       over a larger disc. Sharp grain on top of soft haze comes out of this one line. */
-    vLevel = 1.04 - clamp(defocus * 1.5, 0.0, 1.0);
+    /* The light a point carries is fixed; spread over a bigger disc it gets dimmer by the ratio of the
+       areas. A floor keeps the far haze from vanishing completely. */
+    vLight = clamp(pow(sharp / (sharp + coc * uRadius), 2.0) * 1.15, 0.03, 1.0);
 
     gl_Position = projectionMatrix * viewPosition;
-    gl_PointSize = clamp(spot * uScreenScale / max(depth, 0.001), 1.0, 220.0);
+    gl_PointSize = clamp(size * uScreenScale / depth, 1.0, 220.0);
 }
 `;
 
@@ -169,15 +146,15 @@ precision highp float;
 uniform vec3 uColor;
 uniform float uOpacity;
 
-varying float vLevel;
+varying float vLight;
 
 void main()
 {
-    /* A disc, not a square: bokeh takes the shape of the aperture, and square apertures are not a thing. */
+    /* A round disc with a soft rim: bokeh takes the shape of the aperture, and apertures are round. */
     vec2 offset = gl_PointCoord * 2.0 - 1.0;
-    float disc = smoothstep(1.0, 0.86, length(offset));
+    float disc = 1.0 - smoothstep(0.78, 1.0, length(offset));
 
-    float alpha = disc * vLevel * uOpacity;
+    float alpha = disc * vLight * uOpacity;
     if(alpha <= 0.002) discard;
 
     gl_FragColor = vec4(uColor, alpha);

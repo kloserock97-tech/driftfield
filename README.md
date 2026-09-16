@@ -10,9 +10,9 @@ result the lens keeps in focus.
 
 ## The idea
 
-Nothing here is simulated. There is no particle state, no velocity buffer, no integration step. Each
-point knows one thing: where it started. Its position for the current frame is a pure function of
-that seed and the clock, evaluated in the vertex shader.
+Nothing here is simulated over time. There is no particle state and no velocity buffer carried from
+one frame to the next. Each point knows one thing: where it started. Its position for the current
+frame is a pure function of that seed and the clock, recomputed in the vertex shader every frame.
 
 That one decision pays for most of the good behaviour:
 
@@ -24,45 +24,45 @@ That one decision pays for most of the good behaviour:
 
 ## How the shape happens
 
-The velocity comes from the curl of a noise field. Curl has zero divergence by construction, so the
-flow has no sources and no sinks: points never pile into clumps and never drain out of the frame.
-The curl is then normalised to unit length, and that single normalisation is why the cloud comes out
-round. There is no sphere in the code.
+The velocity comes from the curl of a noise potential. A curl has zero divergence by construction, so
+the flow has no sources and no sinks: points never pile into clumps and never drain out of the frame.
 
-The ragged parts come from folding. Octave zero is the smooth shell, one turn through the field.
-Every octave after it folds what is already folded, at twice the frequency and half the weight, and
-the last one starts from the shell again so a fine ripple rides on top of the big shreds. Which of
-the two a point follows is decided by another noise sample — and the **dissolve** slider slides that
-decision across the whole cloud, from an intact bubble to a ball of loose thread.
+Each point then takes three steps.
 
-The choice value is deliberately left unclamped. It swings past zero and past one, and out there the
-blend stops blending and extrapolates: points get thrown outside the shell. That overshoot is the
-whole reason the edge looks torn instead of moulded.
+1. **Landing.** The field direction at the seed, normalised, is a point on the unit sphere. That one
+   normalisation is why the cloud comes out round; there is no sphere anywhere in the code.
+2. **Tracing.** From that point it follows the field for a few short strides, each shorter than the
+   last and sampled at a finer scale, the way you would integrate a streamline. Seeds that land close
+   together walk the same path, and that is what draws threads instead of noise.
+3. **Spray.** A slow noise over the sphere decides how far each patch sits from the shell. It is left
+   unclamped: where it dips the points sink inside, where it peaks they are thrown out, so the
+   silhouette tears instead of staying a clean ball.
 
 ## The lens
 
-The depth of field is fake and costs almost nothing. A point's size is its distance from the plane of
-focus, and its brightness falls with the same distance. A point in focus is a tight bright dot; a
-point far from it swells into a pale disc. That is what a real circle of confusion does — the same
-light spread over a larger area — and it is two lines of shader.
+Depth of field is computed with the thin-lens formula rather than faked with a size ramp. The blur
+disc grows with the distance from the plane of focus relative to the point's own distance, and the
+aperture is an f-number: 1.4 is wide open and melts everything outside the focus, 16 keeps the whole
+cloud crisp. A point's light is spread over its disc, so brightness falls with the ratio of the areas,
+which is what gives sharp grain on top of soft haze.
 
-The discs are drawn with alpha blending rather than additive. Additive has no ceiling: fifty discs at
-four hundredths each add up to two and anything dense burns out to flat white. Alpha saturates, so
-the same fifty layers land at 0.87, and the cloud keeps both its soft haze and its sharp grain.
+The discs are drawn with alpha compositing rather than added light. Added light has no ceiling and
+burns dense regions to flat white; alpha saturates towards the particle colour and keeps the structure
+readable in the thickest part of the cloud.
 
 ## Controls
 
 | Group | What it does |
 | --- | --- |
 | **points** | how many are drawn, 5k to 200k |
-| **seed spread** | how far apart neighbours sit in the noise: coarse shreds or fine ones |
+| **seed spread** | how far apart neighbours start in the noise: small values give threads, large ones give dust |
 | **radius** | size of the cloud in world units |
-| **frequency** | field scale: low is smooth sheets, high is tangled thread |
+| **frequency** | field scale: low is broad sheets, high is fine tangles |
 | **speed** | how fast the field moves through itself |
-| **dissolve** | intact shell → unwound strands |
-| **octaves** | how many times the field folds itself |
-| **sampling** | 6 probes per curl (accurate) or 3 (about a third cheaper) |
-| **focus / aperture** | plane of focus and how fast things blur away from it |
+| **spray** | points pulled inside the shell (negative) or thrown off it (positive) |
+| **trace steps** | how far each point follows the streamline, 0 to 6 |
+| **sampling** | 6 probes per curl (central differences) or 3 (about a third cheaper) |
+| **focus / f-stop** | plane of focus and aperture, like a real lens |
 | **point size / opacity / colours** | the rest of the look |
 
 `H` hides the panel, `Space` freezes time, drag to orbit, scroll to zoom.
@@ -76,13 +76,13 @@ whole setup in the address bar, so a version you liked can be sent to someone as
 
 ## Performance
 
-One draw call of `gl.POINTS`. The cost is almost entirely noise sampling in the vertex shader: with
-six probes and five octaves a point costs about 90 noise evaluations per frame, and that is the number
-to watch. If the frame rate drops, the two useful dials are **octaves** and **sampling** — each step
-down roughly halves the work, and the shape survives both.
+One draw call of `gl.POINTS`. The cost is almost entirely noise sampling in the vertex shader: a curl
+with six probes reads the potential eighteen times, and a point evaluates one curl to land plus one per
+trace step. If the frame rate drops, the useful dials are **trace steps** and **sampling**; the shape
+survives both.
 
-On an Intel Arc integrated GPU the defaults (80k points, six probes, five octaves) run at over 100 fps
-at 1368×775.
+On an Intel Arc integrated GPU the defaults (80k points, six probes, three trace steps) run at about
+110 fps at 1368×775.
 
 ## Running it
 
@@ -103,9 +103,10 @@ encoding. No models, no textures, no data files — the whole thing is code.
 
 ## Prior art
 
-Particles in a curl-noise field with a fake depth of field is a known recipe; this is my own
-implementation of it, written from scratch with its own noise, its own folding scheme and its own
-parameter set. Built with [three.js](https://threejs.org) and [lil-gui](https://lil-gui.georgealways.com).
+Particles carried by a curl-noise field are a common building block in real-time graphics. The
+construction here (streamline tracing from a landing point on the sphere, noise-driven spray, a
+thin-lens depth of field with an f-number) and all of the code are my own. Built with
+[three.js](https://threejs.org) and [lil-gui](https://lil-gui.georgealways.com).
 
 ## Licence
 

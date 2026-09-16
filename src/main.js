@@ -41,11 +41,11 @@ controls.maxDistance = 40;
 
 const uniforms = {
     uTime: { value: 0 },
-    uCurl: { value: settings.curl },
-    uDissolve: { value: settings.dissolve },
+    uFrequency: { value: settings.frequency },
+    uSpray: { value: settings.spray },
     uRadius: { value: settings.radius },
     uFocus: { value: settings.focus },
-    uAperture: { value: settings.aperture },
+    uFStop: { value: settings.fstop },
     uScreenScale: { value: 1 },
     uPointScale: { value: settings.pointScale },
     uColor: { value: new THREE.Color(settings.color) },
@@ -56,12 +56,12 @@ const material = new THREE.ShaderMaterial({
     vertexShader,
     fragmentShader,
     uniforms,
-    defines: { OCTAVES: settings.octaves, PROBES: settings.probes },
+    defines: { STEPS: settings.steps, PROBES: settings.probes },
     transparent: true,
     depthWrite: false,
-    /* Alpha blending, not additive. Additive has no ceiling: fifty discs at four hundredths each add
-       up to two and everything dense blows out to flat white. Alpha saturates, so the same fifty
-       layers land at 0.87 and the cloud keeps both its soft haze and its sharp grain. */
+    /* Alpha blending rather than additive. Added light has no ceiling, so wherever the cloud is dense
+       it burns out to a flat white patch; alpha compositing saturates towards the particle colour
+       and keeps the structure readable even in the thickest part. */
     blending: THREE.NormalBlending,
 });
 
@@ -134,15 +134,15 @@ shape.add(settings, "spread", 16, 512, 1).name("seed spread").onFinishChange(() 
 shape.add(settings, "radius", 0.2, 4, 0.01).name("radius").onChange(apply);
 
 const flow = gui.addFolder("Flow field");
-flow.add(settings, "curl", 0.05, 2, 0.01).name("frequency").onChange(apply);
+flow.add(settings, "frequency", 0.05, 2, 0.01).name("frequency").onChange(apply);
 flow.add(settings, "speed", 0, 30, 0.1).name("speed").onChange(apply);
-flow.add(settings, "dissolve", -0.6, 1.6, 0.01).name("dissolve").onChange(apply);
-flow.add(settings, "octaves", 1, 5, 1).name("octaves").onChange(rebuild);
+flow.add(settings, "spray", -1, 1.5, 0.01).name("spray").onChange(apply);
+flow.add(settings, "steps", 0, 6, 1).name("trace steps").onChange(rebuild);
 flow.add(settings, "probes", { "fast (3 probes)": 3, "accurate (6 probes)": 6 }).name("sampling").onChange(rebuild);
 
 const lens = gui.addFolder("Lens");
 lens.add(settings, "focus", 0.5, 20, 0.05).name("focus distance").onChange(apply);
-lens.add(settings, "aperture", 1, 5.6, 0.01).name("aperture").onChange(apply);
+lens.add(settings, "fstop", 1.4, 16, 0.1).name("f-stop").onChange(apply);
 lens.add(settings, "pointScale", 0.2, 6, 0.01).name("point size").onChange(apply);
 lens.add(settings, "opacity", 0.02, 1, 0.01).name("opacity").onChange(apply);
 lens.addColor(settings, "color").name("particles").onChange(apply);
@@ -178,7 +178,7 @@ gui.add(actions, "reset").name("reset");
 
 function rebuild()
 {
-    material.defines.OCTAVES = Math.round(settings.octaves);
+    material.defines.STEPS = Math.round(settings.steps);
     material.defines.PROBES = Number(settings.probes);
     material.needsUpdate = true;
     apply();
@@ -186,11 +186,11 @@ function rebuild()
 
 function sync()
 {
-    uniforms.uCurl.value = settings.curl;
-    uniforms.uDissolve.value = settings.dissolve;
+    uniforms.uFrequency.value = settings.frequency;
+    uniforms.uSpray.value = settings.spray;
     uniforms.uRadius.value = settings.radius;
     uniforms.uFocus.value = settings.focus;
-    uniforms.uAperture.value = settings.aperture;
+    uniforms.uFStop.value = settings.fstop;
     uniforms.uPointScale.value = settings.pointScale;
     uniforms.uOpacity.value = settings.opacity;
     uniforms.uColor.value.set(settings.color);
@@ -253,7 +253,7 @@ function tick()
     requestAnimationFrame(tick);
 
     const delta = Math.min(clock.getDelta(), 0.1);
-    if(!settings.paused) elapsed += delta * settings.speed * 0.015;
+    if(!settings.paused) elapsed += delta * settings.speed * 0.02;
     uniforms.uTime.value = elapsed;
 
     controls.update();

@@ -6,16 +6,16 @@
 
 export const DEFAULTS = {
     count: 80000,
-    spread: 128,
-    radius: 1,
-    curl: 0.45,
-    speed: 9.8,
-    dissolve: 0.25,
-    octaves: 5,
+    spread: 96,
+    radius: 0.85,
+    frequency: 0.5,
+    speed: 6,
+    spray: 0.05,
+    steps: 3,
     probes: 6,
-    focus: 5.1,
-    aperture: 3,
-    pointScale: 2.4,
+    focus: 6.2,
+    fstop: 3.2,
+    pointScale: 2,
     opacity: 1,
     color: "#ffffff",
     background: "#06070a",
@@ -24,21 +24,21 @@ export const DEFAULTS = {
     paused: false,
 };
 
-/* Four looks the field can take without touching anything else. They are not modes: each one is
-   just a handful of the same sliders in a different place. */
+/* Looks the field can take without touching anything else. They are not modes: each one is just a
+   handful of the same sliders in a different place. */
 export const PRESETS = {
     bubble: {},
-    nebula: { curl: 0.24, dissolve: 0.55, aperture: 2.6, speed: 4.5, opacity: 0.85, count: 70000, color: "#cfe3ff" },
-    /* Threads come from a small seed spread, not from a high frequency: neighbours start close in the
-       noise, so they follow each other through every fold and draw a line together. */
-    threads: { curl: 0.3, dissolve: 0.7, aperture: 4.4, speed: 8, pointScale: 1.5, count: 120000, spread: 40 },
-    ember: { curl: 0.6, dissolve: 0.2, aperture: 2, speed: 6, color: "#ffb47a", background: "#140b06", pointScale: 1.6 },
-    ink: { curl: 0.35, dissolve: -0.25, aperture: 3.4, speed: 3, color: "#101014", background: "#f1f0ea", opacity: 0.55 },
+    nebula: { frequency: 0.3, spray: 0.35, fstop: 1.8, speed: 3, opacity: 0.85, count: 70000, radius: 0.72, color: "#cfe3ff" },
+    /* Threads come from a small seed spread and more trace steps: neighbours start close in the noise
+       and walk the same streamline, so they draw a line together instead of scattering. */
+    threads: { frequency: 0.35, spray: -0.1, steps: 4, fstop: 5.6, speed: 4, count: 90000, spread: 32, pointScale: 1.6 },
+    ember: { frequency: 0.7, spray: 0.2, fstop: 2.4, speed: 5, color: "#ffb47a", background: "#140b06", pointScale: 1.8, radius: 0.8 },
+    ink: { frequency: 0.4, spray: -0.2, fstop: 4, speed: 2, color: "#101014", background: "#f1f0ea", opacity: 0.7, pointScale: 1.6 },
 };
 
 const KEYS = {
-    count: "n", spread: "sp", radius: "r", curl: "c", speed: "s", dissolve: "d", octaves: "o",
-    probes: "p", focus: "f", aperture: "a", pointScale: "ps", opacity: "op", color: "col",
+    count: "n", spread: "sp", radius: "r", frequency: "fq", speed: "s", spray: "sy", steps: "st",
+    probes: "p", focus: "f", fstop: "fs", pointScale: "ps", opacity: "op", color: "col",
     background: "bg", autoRotate: "ar", rotateSpeed: "rs", paused: "pa",
 };
 
