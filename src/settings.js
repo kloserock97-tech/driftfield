@@ -29,7 +29,9 @@ export const DEFAULTS = {
 export const PRESETS = {
     bubble: {},
     nebula: { curl: 0.24, dissolve: 0.55, aperture: 2.6, speed: 4.5, opacity: 0.85, count: 70000, color: "#cfe3ff" },
-    threads: { curl: 1.15, dissolve: 1.2, aperture: 5.2, speed: 14, pointScale: 0.7, count: 90000 },
+    /* Threads come from a small seed spread, not from a high frequency: neighbours start close in the
+       noise, so they follow each other through every fold and draw a line together. */
+    threads: { curl: 0.3, dissolve: 0.7, aperture: 4.4, speed: 8, pointScale: 1.5, count: 120000, spread: 40 },
     ember: { curl: 0.6, dissolve: 0.2, aperture: 2, speed: 6, color: "#ffb47a", background: "#140b06", pointScale: 1.6 },
     ink: { curl: 0.35, dissolve: -0.25, aperture: 3.4, speed: 3, color: "#101014", background: "#f1f0ea", opacity: 0.55 },
 };
