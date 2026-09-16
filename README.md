@@ -110,7 +110,10 @@ thin-lens depth of field with an f-number) and all of the code are my own. Built
 
 ## Licence
 
-MIT — see [LICENSE](LICENSE).
+Source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE): free for personal,
+study, research and other noncommercial use. **Commercial use needs a paid license**, see
+[COMMERCIAL.md](COMMERCIAL.md) or write to kloserock97@gmail.com. Third-party parts keep their own
+licenses, listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 Nikita Gorbachev · kloserock97@gmail.com ·
 [LinkedIn](https://www.linkedin.com/in/nikita-gorbachev-productdesigner)

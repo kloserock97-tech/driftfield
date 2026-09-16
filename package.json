@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "A GPU particle cloud living inside a curl-noise flow field, with a fake depth of field and a live control panel.",
   "type": "module",
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
   "author": "Nikita Gorbachev",
   "scripts": {
     "dev": "vite",
