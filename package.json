@@ -1,7 +1,7 @@
 {
   "name": "driftfield",
   "version": "1.0.0",
-  "description": "A GPU particle cloud living inside a curl-noise flow field, with a fake depth of field and a live control panel.",
+  "description": "A GPU particle cloud in a curl-noise flow field, seen through a thin-lens depth of field, with a live control panel.",
   "type": "module",
   "license": "SEE LICENSE IN LICENSE",
   "author": "Nikita Gorbachev",

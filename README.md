@@ -10,17 +10,17 @@ result the lens keeps in focus.
 
 ## The idea
 
-Nothing here is simulated over time. There is no particle state and no velocity buffer carried from
-one frame to the next. Each point knows one thing: where it started. Its position for the current
-frame is a pure function of that seed and the clock, recomputed in the vertex shader every frame.
+Nothing here is simulated over time, and no particle state or velocity buffer is carried from one frame
+to the next. Each point only knows where it started. Its position for the current frame is a pure
+function of that seed and the clock, recomputed in the vertex shader every frame.
 
-That one decision pays for most of the good behaviour:
+Three things follow from that:
 
-- **Time is a number, not a history.** Freeze it, scrub it backwards, jump it forward. The cloud
-  reassembles itself exactly, because there is nothing to reassemble.
-- **The point count is a slider.** No warm-up, no respawn, no gaps. Drag it from five thousand to two
-  hundred thousand and the shape stays the same, just denser.
-- **A dropped frame costs nothing.** Skipped time is skipped, not accumulated as drift.
+- **Time is a number.** You can freeze it, scrub it backwards or jump forward, and the cloud comes out
+  the same, because every frame is computed from scratch.
+- **The point count is a slider.** Drag it from five thousand to two hundred thousand and the shape
+  stays the same and gets denser, with no warm-up and no respawn.
+- **A dropped frame costs nothing.** The skipped time never turns into drift.
 
 ## How the shape happens
 
@@ -29,26 +29,26 @@ the flow has no sources and no sinks: points never pile into clumps and never dr
 
 Each point then takes three steps.
 
-1. **Landing.** The field direction at the seed, normalised, is a point on the unit sphere. That one
-   normalisation is why the cloud comes out round; there is no sphere anywhere in the code.
-2. **Tracing.** From that point it follows the field for a few short strides, each shorter than the
-   last and sampled at a finer scale, the way you would integrate a streamline. Seeds that land close
-   together walk the same path, and that is what draws threads instead of noise.
+1. **Landing.** The field direction at the seed, normalised, is a point on the unit sphere. That
+   normalisation is why the cloud comes out round. The code has no sphere in it.
+2. **Tracing.** From that point it follows the field for a few short strides, each shorter than the last
+   and sampled at a finer scale, the way you would integrate a streamline. Seeds that land close
+   together walk the same path, and that is what draws threads where you would expect noise.
 3. **Spray.** A slow noise over the sphere decides how far each patch sits from the shell. It is left
    unclamped: where it dips the points sink inside, where it peaks they are thrown out, so the
-   silhouette tears instead of staying a clean ball.
+   silhouette tears and stops being a clean ball.
 
 ## The lens
 
-Depth of field is computed with the thin-lens formula rather than faked with a size ramp. The blur
-disc grows with the distance from the plane of focus relative to the point's own distance, and the
-aperture is an f-number: 1.4 is wide open and melts everything outside the focus, 16 keeps the whole
-cloud crisp. A point's light is spread over its disc, so brightness falls with the ratio of the areas,
-which is what gives sharp grain on top of soft haze.
+Depth of field is computed with the thin-lens formula, the one a real lens follows. The blur disc grows
+with the distance from the plane of focus relative to the point's own distance, and the aperture is an
+f-number: 1.4 is wide open and melts everything outside the focus, 16 keeps the whole cloud crisp. A
+point's light is spread over its disc, so brightness falls with the ratio of the areas, which is what
+gives sharp grain on top of soft haze.
 
-The discs are drawn with alpha compositing rather than added light. Added light has no ceiling and
-burns dense regions to flat white; alpha saturates towards the particle colour and keeps the structure
-readable in the thickest part of the cloud.
+The discs are drawn with alpha compositing. Added light has no ceiling and burns dense regions to flat
+white. Alpha saturates towards the particle colour and keeps the structure readable in the thickest part
+of the cloud.
 
 ## Controls
 
@@ -78,7 +78,7 @@ whole setup in the address bar, so a version you liked can be sent to someone as
 
 One draw call of `gl.POINTS`. The cost is almost entirely noise sampling in the vertex shader: a curl
 with six probes reads the potential eighteen times, and a point evaluates one curl to land plus one per
-trace step. If the frame rate drops, the useful dials are **trace steps** and **sampling**; the shape
+trace step. If the frame rate drops, the useful dials are **trace steps** and **sampling**. The shape
 survives both.
 
 On an Intel Arc integrated GPU the defaults (80k points, six probes, three trace steps) run at about
@@ -97,9 +97,9 @@ npm run preview
 
 `.github/workflows/deploy.yml` publishes `dist/` to GitHub Pages on every push to `main`.
 
-Three files matter: `src/field.glsl.js` is the field and the lens as shader source,
-`src/main.js` wires the scene and the panel, `src/settings.js` holds defaults, presets and the URL
-encoding. No models, no textures, no data files — the whole thing is code.
+Three files matter: `src/field.glsl.js` is the field and the lens as shader source, `src/main.js` wires
+the scene and the panel, `src/settings.js` holds defaults, presets and the URL encoding. The project has
+no models, textures or data files, only code.
 
 ## Prior art
 
